@@ -1,0 +1,16 @@
+*.egg-info/
+dist/
+build/
+__pycache__/
+*.pyc
+.pytest_cache/
+mempal.yaml
+.claude/
+.code_index/
+.codex/
+.opencode/
+mempalace-cli
+mempalace-down
+mempalace-mcp
+mempalace-up
+tmp/
