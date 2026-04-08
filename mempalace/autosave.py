@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from .conversation_skeleton import write_relationship_skeleton
 from .general_extractor import extract_memories
 from .normalize import normalize
 from .qdrant_store import get_store
@@ -108,6 +109,9 @@ def persist_autosave(snapshot_file: str, wing: str, agent: str, workspace_root: 
             {"trigger": trigger, "memory_type": memory["memory_type"]},
         )
         memory_count += 1
+
+    if memories:
+        write_relationship_skeleton(workspace_root, source_file, memories)
 
     repo_root = _git_repo_root(workspace_root)
     if repo_root:
