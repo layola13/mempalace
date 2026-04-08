@@ -34,5 +34,11 @@ def test_build_relationship_skeleton_groups_topics_files_and_patterns():
     assert "same_file_neighbors" in text
     assert "same_pattern_neighbors" in text
     assert "mempalace/autosave.py" in text
+    assert "topics=" in text
+    assert "files=" in text
+    assert "NODE_TYPES" in text
+    assert "NODE_TOPICS" in text
+    assert "NODE_FILES" in text
+    assert "from .summary import SNAPSHOT_NAME, TASK_DESCRIPTION, TASK_TOPICS, snapshot_overview" in text
     assert stats["memory_count"] == 3
     assert stats["edge_count"] >= 0

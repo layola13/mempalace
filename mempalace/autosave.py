@@ -88,7 +88,14 @@ def _summarize_file_changes(text: str) -> str:
     return "\n\n".join(sections)
 
 
-def persist_autosave(snapshot_file: str, wing: str, agent: str, workspace_root: str, trigger: str) -> Tuple[int, bool]:
+def persist_autosave(
+    snapshot_file: str,
+    wing: str,
+    agent: str,
+    workspace_root: str,
+    trigger: str,
+    session_id: str = "unknown",
+) -> Tuple[int, bool]:
     snapshot_path = Path(snapshot_file)
     source_file = str(snapshot_path)
     normalized = normalize(source_file)
@@ -111,7 +118,7 @@ def persist_autosave(snapshot_file: str, wing: str, agent: str, workspace_root: 
         memory_count += 1
 
     if memories:
-        write_relationship_skeleton(workspace_root, source_file, memories)
+        write_relationship_skeleton(workspace_root, source_file, session_id, memories)
 
     repo_root = _git_repo_root(workspace_root)
     if repo_root:
@@ -155,6 +162,7 @@ def main() -> int:
     parser.add_argument("--agent", required=True)
     parser.add_argument("--workspace-root", required=True)
     parser.add_argument("--trigger", required=True)
+    parser.add_argument("--session-id", default="unknown")
     args = parser.parse_args()
 
     persist_autosave(
@@ -163,6 +171,7 @@ def main() -> int:
         agent=args.agent,
         workspace_root=args.workspace_root,
         trigger=args.trigger,
+        session_id=args.session_id,
     )
     return 0
 

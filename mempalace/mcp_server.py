@@ -10,12 +10,32 @@ import json
 import logging
 import sys
 from datetime import datetime
+from pathlib import Path
 
 from .config import MempalaceConfig
+from .conversation_skeleton import index_output_path, skeleton_output_path
 from .knowledge_graph import KnowledgeGraph
 from .palace_graph import find_tunnels, graph_stats, traverse
 from .qdrant_store import QdrantClientAdapter, get_store
 from .searcher import search_memories
+from .skeleton_search import (
+    check_duplicate_skeleton,
+    fast_status,
+    find_tunnels_fast,
+    get_taxonomy_fast,
+    graph_stats_fast,
+    list_rooms_fast,
+    list_snapshots,
+    list_wings_fast,
+    load_index,
+    neighbors_fast,
+    read_snapshot_module,
+    search_skeleton,
+    summary_for_snapshot,
+    top_files_fast,
+    top_topics_fast,
+    traverse_fast,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
 logger = logging.getLogger("mempalace_mcp")
@@ -148,30 +168,14 @@ def tool_check_duplicate(content: str, threshold: float = 0.9):
     return {"is_duplicate": len(duplicates) > 0, "matches": duplicates}
 
 
-def tool_get_aaak_spec():
-    return {"aaak_spec": AAAK_SPEC}
-
-
-def tool_traverse_graph(start_room: str, max_hops: int = 2):
-    col = _require_collection()
-    return traverse(start_room, col=col, max_hops=max_hops)
-
-
-def tool_find_tunnels(wing_a: str = None, wing_b: str = None):
-    col = _require_collection()
-    return find_tunnels(wing_a, wing_b, col=col)
-
-
-def tool_graph_stats():
-    col = _require_collection()
-    return graph_stats(col=col)
-
-
 def tool_add_drawer(
-    wing: str, room: str, content: str, source_file: str = None, added_by: str = "mcp"
+    wing: str,
+    room: str,
+    content: str,
+    source_file: str = None,
+    added_by: str = "claude",
 ):
     col = _require_collection(create=True)
-
     dup = tool_check_duplicate(content, threshold=0.9)
     if dup.get("is_duplicate"):
         return {"success": False, "reason": "duplicate", "matches": dup["matches"]}
@@ -196,13 +200,156 @@ def tool_add_drawer(
 
 
 def tool_delete_drawer(drawer_id: str):
-    col = _require_collection()
-    existing = col.get(ids=[drawer_id])
-    if not existing["ids"]:
-        return {"success": False, "error": f"Drawer not found: {drawer_id}"}
-    col.delete(ids=[drawer_id])
+    result = _store.delete_drawer(drawer_id)
     logger.info(f"Deleted drawer: {drawer_id}")
-    return {"success": True, "drawer_id": drawer_id}
+    return {"success": True, "drawer_id": drawer_id, "result": result}
+
+
+
+def tool_get_aaak_spec():
+    return {"aaak_spec": AAAK_SPEC}
+
+
+def tool_traverse_graph(start_room: str, max_hops: int = 2):
+    col = _require_collection()
+    return traverse(start_room, col=col, max_hops=max_hops)
+
+
+def tool_find_tunnels(wing_a: str = None, wing_b: str = None):
+    col = _require_collection()
+    return find_tunnels(wing_a, wing_b, col=col)
+
+
+def tool_graph_stats():
+    col = _require_collection()
+    return graph_stats(col=col)
+
+
+def _skeleton_root() -> Path:
+    return skeleton_output_path(str(Path.cwd()))
+
+
+def _snapshot_dir(snapshot: str) -> Path:
+    return _skeleton_root() / snapshot
+
+
+def tool_skeleton_index():
+    index_path = index_output_path(str(Path.cwd()))
+    if not index_path.exists():
+        return {
+            "exists": False,
+            "index_path": str(index_path),
+            "message": "Conversation skeleton index not found.",
+        }
+    return {
+        "exists": True,
+        "index_path": str(index_path),
+        "index_text": index_path.read_text(encoding="utf-8"),
+    }
+
+
+def tool_skeleton_read(snapshot: str, module: str):
+    allowed_modules = {"__init__", "summary", "nodes", "topics", "files", "patterns", "edges"}
+    if module not in allowed_modules:
+        return {
+            "success": False,
+            "error": f"Unsupported module: {module}",
+            "allowed_modules": sorted(allowed_modules),
+        }
+
+    snapshot_dir = _snapshot_dir(snapshot)
+    if not snapshot_dir.exists() or not snapshot_dir.is_dir():
+        return {
+            "success": False,
+            "error": f"Snapshot not found: {snapshot}",
+            "snapshot": snapshot,
+            "snapshot_dir": str(snapshot_dir),
+        }
+
+    file_name = "__init__.py" if module == "__init__" else f"{module}.py"
+    file_path = snapshot_dir / file_name
+    if not file_path.exists():
+        return {
+            "success": False,
+            "error": f"Module file not found: {file_name}",
+            "snapshot": snapshot,
+            "module": module,
+            "file_path": str(file_path),
+        }
+
+    return {
+        "success": True,
+        "snapshot": snapshot,
+        "module": module,
+        "file_path": str(file_path),
+        "content": file_path.read_text(encoding="utf-8"),
+    }
+
+
+
+
+def tool_fast_status():
+    return fast_status(str(Path.cwd()))
+
+
+def tool_fast_skeleton_index():
+    return load_index(str(Path.cwd()))
+
+
+def tool_fast_skeleton_read(snapshot: str, module: str):
+    return read_snapshot_module(str(Path.cwd()), snapshot, module)
+
+
+def tool_fast_list_snapshots():
+    return list_snapshots(str(Path.cwd()))
+
+
+def tool_fast_summary_for(snapshot: str):
+    return summary_for_snapshot(str(Path.cwd()), snapshot)
+
+
+def tool_fast_list_wings():
+    return list_wings_fast(str(Path.cwd()))
+
+
+def tool_fast_list_rooms(wing: str = None):
+    return list_rooms_fast(str(Path.cwd()), wing=wing)
+
+
+def tool_fast_get_taxonomy():
+    return get_taxonomy_fast(str(Path.cwd()))
+
+
+def tool_fast_search(query: str, limit: int = 5, wing: str = None, room: str = None):
+    return search_skeleton(str(Path.cwd()), query=query, wing=wing, room=room, limit=limit)
+
+
+def tool_fast_check_duplicate(content: str, threshold: float = 0.9):
+    return check_duplicate_skeleton(str(Path.cwd()), content=content, threshold=threshold)
+
+
+def tool_fast_graph_stats():
+    return graph_stats_fast(str(Path.cwd()))
+
+
+def tool_fast_neighbors(snapshot: str, node_index: int):
+    return neighbors_fast(str(Path.cwd()), snapshot=snapshot, node_index=node_index)
+
+
+def tool_fast_top_topics(snapshot: str = None):
+    return top_topics_fast(str(Path.cwd()), snapshot=snapshot)
+
+
+def tool_fast_top_files(snapshot: str = None):
+    return top_files_fast(str(Path.cwd()), snapshot=snapshot)
+
+
+def tool_fast_traverse(start_room: str, max_hops: int = 2):
+    return traverse_fast(str(Path.cwd()), start_room=start_room, max_hops=max_hops)
+
+
+def tool_fast_find_tunnels(wing_a: str = None, wing_b: str = None):
+    return find_tunnels_fast(str(Path.cwd()), wing_a=wing_a, wing_b=wing_b)
 
 
 def tool_kg_query(entity: str, as_of: str = None, direction: str = "both"):
@@ -308,6 +455,144 @@ TOOLS = {
         "description": "Palace overview — total drawers, wing and room counts",
         "input_schema": {"type": "object", "properties": {}},
         "handler": tool_status,
+    },
+    "mempalace_skeleton_index": {
+        "description": "Read the conversation skeleton index entrypoint for LLM navigation.",
+        "input_schema": {"type": "object", "properties": {}},
+        "handler": tool_skeleton_index,
+    },
+    "mempalace_skeleton_read": {
+        "description": "Read a specific conversation skeleton snapshot module.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "snapshot": {"type": "string"},
+                "module": {"type": "string"},
+            },
+            "required": ["snapshot", "module"],
+        },
+        "handler": tool_skeleton_read,
+    },
+    "mempalace_fast_status": {
+        "description": "Skeleton-backed status overview with timing.",
+        "input_schema": {"type": "object", "properties": {}},
+        "handler": tool_fast_status,
+    },
+    "mempalace_fast_skeleton_index": {
+        "description": "Load the conversation skeleton index with timing.",
+        "input_schema": {"type": "object", "properties": {}},
+        "handler": tool_fast_skeleton_index,
+    },
+    "mempalace_fast_skeleton_read": {
+        "description": "Read a specific conversation skeleton snapshot module through the fast backend.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"snapshot": {"type": "string"}, "module": {"type": "string"}},
+            "required": ["snapshot", "module"],
+        },
+        "handler": tool_fast_skeleton_read,
+    },
+    "mempalace_fast_list_wings": {
+        "description": "List derived skeleton wings with timing.",
+        "input_schema": {"type": "object", "properties": {}},
+        "handler": tool_fast_list_wings,
+    },
+    "mempalace_fast_list_rooms": {
+        "description": "List derived skeleton rooms with timing.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"wing": {"type": "string", "description": "Wing to list rooms for (optional)"}},
+        },
+        "handler": tool_fast_list_rooms,
+    },
+    "mempalace_fast_get_taxonomy": {
+        "description": "Derived skeleton taxonomy with timing.",
+        "input_schema": {"type": "object", "properties": {}},
+        "handler": tool_fast_get_taxonomy,
+    },
+    "mempalace_fast_search": {
+        "description": "Search the conversation skeleton locally with timing.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "limit": {"type": "integer"},
+                "wing": {"type": "string"},
+                "room": {"type": "string"}
+            },
+            "required": ["query"],
+        },
+        "handler": tool_fast_search,
+    },
+    "mempalace_fast_check_duplicate": {
+        "description": "Check for duplicate content against the skeleton locally.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"content": {"type": "string"}, "threshold": {"type": "number"}},
+            "required": ["content"],
+        },
+        "handler": tool_fast_check_duplicate,
+    },
+    "mempalace_fast_graph_stats": {
+        "description": "Skeleton graph overview with timing.",
+        "input_schema": {"type": "object", "properties": {}},
+        "handler": tool_fast_graph_stats,
+    },
+    "mempalace_fast_traverse": {
+        "description": "Traverse derived skeleton room links with timing.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"start_room": {"type": "string"}, "max_hops": {"type": "integer"}},
+            "required": ["start_room"],
+        },
+        "handler": tool_fast_traverse,
+    },
+    "mempalace_fast_find_tunnels": {
+        "description": "Find derived skeleton tunnels between wings with timing.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"wing_a": {"type": "string"}, "wing_b": {"type": "string"}},
+        },
+        "handler": tool_fast_find_tunnels,
+    },
+    "mempalace_fast_list_snapshots": {
+        "description": "List available skeleton snapshots with timing.",
+        "input_schema": {"type": "object", "properties": {}},
+        "handler": tool_fast_list_snapshots,
+    },
+    "mempalace_fast_summary_for": {
+        "description": "Read summary metadata for a skeleton snapshot with timing.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"snapshot": {"type": "string"}},
+            "required": ["snapshot"],
+        },
+        "handler": tool_fast_summary_for,
+    },
+    "mempalace_fast_top_topics": {
+        "description": "Return top topics globally or for a snapshot with timing.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"snapshot": {"type": "string"}},
+        },
+        "handler": tool_fast_top_topics,
+    },
+    "mempalace_fast_top_files": {
+        "description": "Return top files globally or for a snapshot with timing.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"snapshot": {"type": "string"}},
+        },
+        "handler": tool_fast_top_files,
+    },
+    "mempalace_fast_neighbors": {
+        "description": "Return neighbors for a node in a snapshot with timing.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"snapshot": {"type": "string"}, "node_index": {"type": "integer"}},
+            "required": ["snapshot", "node_index"],
+        },
+        "handler": tool_fast_neighbors,
     },
     "mempalace_list_wings": {
         "description": "List all wings with drawer counts",

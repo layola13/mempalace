@@ -4,7 +4,145 @@
 
 ---
 
-## The Core Finding
+## Fast skeleton MCP benchmark workflow
+
+The repository now has a second benchmark target in addition to retrieval-quality benchmarks: the local Python skeleton backend under `.mempalace/skeleton/` and the parallel `mempalace_fast_*` MCP tools.
+
+This benchmark is about **latency and local query behavior**, not LongMemEval or LoCoMo answer quality.
+
+Measure these three categories together:
+
+1. **Generation speed** — how long it takes to turn a transcript snapshot into a split Python skeleton package and update `.mempalace/skeleton/__index__.py`.
+2. **Index speed** — how long it takes to load the skeleton index and route to a snapshot.
+3. **Query speed** — how long it takes to answer representative MCP read/query calls from the skeleton backend.
+
+Use the old MCP path and the `fast_` MCP path side by side when comparing query latency.
+
+### Minimum benchmark matrix
+
+For each benchmark run, record at least:
+
+- transcript or snapshot source
+- snapshot size or memory count
+- generation elapsed time
+- `mempalace_skeleton_index` elapsed time
+- `mempalace_fast_skeleton_index` elapsed time
+- `mempalace_fast_search` elapsed time
+- `mempalace_fast_neighbors` elapsed time
+- `mempalace_fast_graph_stats` elapsed time
+- matching legacy MCP timings where comparison is meaningful
+
+### Recommended benchmark flow
+
+1. Generate or reuse a real snapshot JSONL transcript.
+2. Run autosave once so the skeleton package is regenerated.
+3. Record generation elapsed time around `persist_autosave(...)`.
+4. Call the skeleton-backed MCP tools against the generated snapshot.
+5. For read/query operations that still exist on the legacy backend, call both old and `fast_` tools with equivalent inputs.
+6. Save the timing results in a reproducible text or JSON artifact under `benchmarks/`.
+
+### Current fast MCP tool set to measure
+
+The first-pass skeleton-backed tools are:
+
+- `mempalace_fast_status`
+- `mempalace_fast_skeleton_index`
+- `mempalace_fast_skeleton_read`
+- `mempalace_fast_list_snapshots`
+- `mempalace_fast_summary_for`
+- `mempalace_fast_list_wings`
+- `mempalace_fast_list_rooms`
+- `mempalace_fast_get_taxonomy`
+- `mempalace_fast_search`
+- `mempalace_fast_check_duplicate`
+- `mempalace_fast_graph_stats`
+- `mempalace_fast_neighbors`
+- `mempalace_fast_top_topics`
+- `mempalace_fast_top_files`
+- `mempalace_fast_traverse`
+- `mempalace_fast_find_tunnels`
+
+All fast tool responses should include:
+
+- `backend: "skeleton"`
+- `elapsed_ms`
+
+### Interpreting results
+
+The `fast_` interface is a **skeleton-backed projection** of the older palace/Qdrant read surface. Some tools are structurally parallel but not semantically identical:
+
+- `mempalace_fast_search` is local rule-based matching over preview text, topics, files, and memory type.
+- `mempalace_fast_check_duplicate` is local exact/subsequence duplicate detection.
+- `mempalace_fast_find_tunnels` currently reports derived room projections rather than a full palace graph bridge analysis.
+
+That means latency comparisons are valid now, but quality/semantic-equivalence claims should be stated carefully.
+
+### Practical verification commands
+
+Focused regression check:
+
+```bash
+python3 -m pytest tests/test_conversation_skeleton.py tests/test_autosave.py
+```
+
+These tests currently verify:
+
+- skeleton generation still works
+- task descriptions filter transcript caveat noise
+- generated skeleton packages are importable and callable
+- fast MCP tool wrappers return skeleton results with timing fields
+
+### Next benchmark artifact to add
+
+A dedicated script under `benchmarks/` should eventually automate:
+
+- transcript generation timing
+- cold and warm index load timing
+- old vs `fast_` query timing for equivalent requests
+- output capture in a single machine-readable results file
+
+Until that script exists, keep benchmark notes explicit about:
+
+- dataset/input used
+- whether results are cold or warm
+- whether the compared tool is exact-match semantics or projection semantics
+
+Usage:
+
+```bash
+python benchmarks/fastmcp_bench.py
+python benchmarks/fastmcp_bench.py --query autosave
+python benchmarks/fastmcp_bench.py --snapshot snapshot_20260408_150119_stop --query autosave
+python benchmarks/fastmcp_bench.py --sample-transcript
+```
+
+What it does:
+
+- `--sample-transcript` measures temporary transcript → skeleton generation time via `persist_autosave(...)`
+- default repo mode benchmarks the current generated `.mempalace/skeleton/` artifacts
+- compares legacy and `fast_` MCP calls where that comparison is meaningful
+- prints JSON that can be saved and compared between runs
+
+What to look at in the output:
+
+- `generation.generation_wall_ms`
+- `repo.index.legacy_skeleton_index.wall_ms`
+- `repo.index.fast_skeleton_index.wall_ms`
+- `repo.read.legacy_skeleton_read.wall_ms`
+- `repo.read.fast_skeleton_read.wall_ms`
+- `repo.query_results.legacy_search.wall_ms`
+- `repo.query_results.fast_search.wall_ms`
+- `repo.equivalence.same_result_count`
+- `repo.equivalence.same_semantics`
+
+Recommended interpretation:
+
+- if `same_result_count` is true, both paths are at least returning comparable result volume for that query
+- if `same_semantics` is false, treat the fast path as a retrieval projection rather than a semantic-equivalent replacement
+- repeated runs are useful because the current fast path reparses files on every call and may benefit from future caching work
+
+### Fast benchmark entrypoint
+
 
 Every competitive memory system uses an LLM to manage memory:
 - Mem0 uses an LLM to extract facts
