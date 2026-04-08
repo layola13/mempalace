@@ -7,6 +7,7 @@ SNAPSHOT_ROOT="$STATE_DIR/transcript_snapshots"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MEMPAL_WING="${MEMPAL_WING:-wing_claude_code}"
 MEMPAL_AGENT="${MEMPAL_AGENT:-mempalace_hook}"
+WORKSPACE_ROOT="${CLAUDE_PROJECT_DIR:-$REPO_DIR}"
 mkdir -p "$STATE_DIR" "$SNAPSHOT_ROOT"
 
 INPUT=$(cat)
@@ -75,7 +76,7 @@ cp "$TRANSCRIPT_PATH" "$SNAPSHOT_FILE"
 
 echo "[$(date '+%H:%M:%S')] TRIGGERING SAVE at exchange $EXCHANGE_COUNT -> $SNAPSHOT_FILE" >> "$STATE_DIR/hook.log"
 
-if PYTHONPATH="$REPO_DIR${PYTHONPATH:+:$PYTHONPATH}" python3 -m mempalace mine "$SESSION_DIR" --mode convos --wing "$MEMPAL_WING" --agent "$MEMPAL_AGENT" >> "$STATE_DIR/hook.log" 2>&1; then
+if PYTHONPATH="$REPO_DIR${PYTHONPATH:+:$PYTHONPATH}" python3 -m mempalace.autosave "$SNAPSHOT_FILE" --wing "$MEMPAL_WING" --agent "$MEMPAL_AGENT" --workspace-root "$WORKSPACE_ROOT" --trigger stop >> "$STATE_DIR/hook.log" 2>&1; then
     echo "$EXCHANGE_COUNT" > "$LAST_SAVE_FILE"
     echo "[$(date '+%H:%M:%S')] AUTO-SAVE persisted successfully" >> "$STATE_DIR/hook.log"
     echo "{}"
@@ -83,7 +84,7 @@ else
     cat <<HOOKJSON
 {
   "decision": "block",
-  "reason": "AUTO-SAVE was due, but MemPalace ingest failed after snapshotting $SNAPSHOT_FILE. Check ~/.mempalace/hook_state/hook.log and save manually before continuing."
+  "reason": "AUTO-SAVE was due, but selective autosave failed after snapshotting $SNAPSHOT_FILE. Check ~/.mempalace/hook_state/hook.log and save manually before continuing."
 }
 HOOKJSON
 fi
